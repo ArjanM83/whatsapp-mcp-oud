@@ -1,6 +1,6 @@
 """Names for WhatsApp person IDs, read live from the bridge's whatsmeow store.
 
-WhatsApp addresses most people by a privacy LID (61757468991700@lid), most
+WhatsApp addresses most people by a privacy LID (12345678901234@lid), most
 visibly as the sender in group chats and in @-mentions. messages.db does not
 know who that is, but the bridge's whatsapp.db does, along two routes:
 
@@ -103,7 +103,7 @@ class ContactNames:
         return result
 
     def replace_mentions(self, text: Optional[str]) -> Optional[str]:
-        """'@61757468991700' in message text -> '@Name' where the ID is known."""
+        """'@12345678901234' in message text -> '@Name' where the ID is known."""
         if not text:
             return text
 
