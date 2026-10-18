@@ -9,7 +9,7 @@ func TestIsPlaceholderName(t *testing.T) {
 		"123456789012345":    true,
 		"+31612345678":       true,
 		"Jane Doe":           false,
-		"Tommy😁":             false,
+		"Sunny😁":             false,
 		"Group 120363012345": false,
 	} {
 		if got := isPlaceholderName(name); got != want {
