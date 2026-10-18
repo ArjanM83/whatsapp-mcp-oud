@@ -967,6 +967,9 @@ func main() {
 	// Start REST API server
 	startRESTServer(client, messageStore, 8080)
 
+	// Keep 1-on-1 chat names in line with the contacts (see names.go)
+	startChatNameRepair(client, messageStore, logger)
+
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
@@ -984,9 +987,10 @@ func main() {
 // GetChatName determines the appropriate name for a chat based on JID and other info
 func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
 	// First, check if chat already exists in database with a name
+	// A bare number is only a stand-in, so for a 1-on-1 chat look again.
 	var existingName string
 	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
-	if err == nil && existingName != "" {
+	if err == nil && existingName != "" && (jid.Server == "g.us" || !isPlaceholderName(existingName)) {
 		// Chat exists with a name, use that
 		logger.Infof("Using existing chat name for %s: %s", chatJID, existingName)
 		return existingName
@@ -1046,15 +1050,10 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 		// This is an individual contact
 		logger.Infof("Getting name for contact: %s", chatJID)
 
-		// Just use contact info (full name)
-		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
-		if err == nil && contact.FullName != "" {
-			name = contact.FullName
-		} else if sender != "" {
-			// Fallback to sender
-			name = sender
-		} else {
-			// Last fallback to JID
+		// Contact name via the LID map (see names.go). The sender is no
+		// fallback: when the first message is our own, it is our own ID.
+		name = contactName(context.Background(), client, jid)
+		if name == "" {
 			name = jid.User
 		}
 

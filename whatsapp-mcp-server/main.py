@@ -14,7 +14,8 @@ from whatsapp import (
     send_audio_message as whatsapp_audio_voice_message,
     download_media as whatsapp_download_media,
     delete_messages_for_me as whatsapp_delete_messages_for_me,
-    archive_chat as whatsapp_archive_chat
+    archive_chat as whatsapp_archive_chat,
+    list_chat_participants as whatsapp_list_chat_participants
 )
 
 # Initialize FastMCP server
@@ -22,10 +23,13 @@ mcp = FastMCP("whatsapp")
 
 @mcp.tool()
 def search_contacts(query: str) -> List[Dict[str, Any]]:
-    """Search WhatsApp contacts by name or phone number.
-    
+    """Search WhatsApp contacts by name, phone number or LID.
+
+    Also finds people who only ever wrote in a group. Each result has the
+    phone number and LID when known; jid is the 1-on-1 chat if there is one.
+
     Args:
-        query: Search term to match against contact names or phone numbers
+        query: Search term to match against contact names, phone numbers or LIDs
     """
     contacts = whatsapp_search_contacts(query)
     return contacts
@@ -96,6 +100,19 @@ def list_chats(
         sort_by=sort_by
     )
     return chats
+
+@mcp.tool()
+def list_chat_participants(chat_jid: str) -> List[Dict[str, Any]]:
+    """List everyone who wrote in a chat (typically a group), most active first.
+
+    Sender IDs in groups are privacy LIDs; this resolves them to the contact
+    name, phone number and LID. A name of null means the bridge does not know
+    the person: report them as unknown, never guess from the conversation.
+
+    Args:
+        chat_jid: The JID of the chat (e.g. "123456789-123456@g.us")
+    """
+    return whatsapp_list_chat_participants(chat_jid)
 
 @mcp.tool()
 def get_chat(chat_jid: str, include_last_message: bool = True) -> Dict[str, Any]:

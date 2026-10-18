@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from datetime import datetime
 from dataclasses import dataclass
@@ -6,6 +7,7 @@ import os.path
 import requests
 import json
 import audio
+from contact_names import contact_names, split_jid
 
 MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
 WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
@@ -29,6 +31,11 @@ class Chat:
     last_message: Optional[str] = None
     last_sender: Optional[str] = None
     last_is_from_me: Optional[bool] = None
+    last_sender_name: Optional[str] = None
+
+    def __post_init__(self):
+        if self.last_sender and not self.last_is_from_me and self.last_sender_name is None:
+            self.last_sender_name = contact_names().name(self.last_sender)
 
     @property
     def is_group(self) -> bool:
@@ -37,9 +44,10 @@ class Chat:
 
 @dataclass
 class Contact:
-    phone_number: str
+    phone_number: Optional[str]
     name: Optional[str]
     jid: str
+    lid: Optional[str] = None
 
 @dataclass
 class MessageContext:
@@ -48,42 +56,29 @@ class MessageContext:
     after: List[Message]
 
 def get_sender_name(sender_jid: str) -> str:
+    """Name of a message sender; the raw ID when nobody knows it.
+
+    Group senders are LIDs, so the contact store comes first. The chat names
+    are the fallback, matched on the exact person JID only: a loose match on
+    the number would also hit group JIDs that contain it.
+    """
+    name = contact_names().name(sender_jid)
+    if name:
+        return name
+    user, _ = split_jid(sender_jid)
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
-        
-        # First try matching by exact JID
         cursor.execute("""
             SELECT name
             FROM chats
-            WHERE jid = ?
+            WHERE jid IN (?, ?)
             LIMIT 1
-        """, (sender_jid,))
-        
+        """, (f"{user}@s.whatsapp.net", f"{user}@lid"))
         result = cursor.fetchone()
-        
-        # If no result, try looking for the number within JIDs
-        if not result:
-            # Extract the phone number part if it's a JID
-            if '@' in sender_jid:
-                phone_part = sender_jid.split('@')[0]
-            else:
-                phone_part = sender_jid
-                
-            cursor.execute("""
-                SELECT name
-                FROM chats
-                WHERE jid LIKE ?
-                LIMIT 1
-            """, (f"%{phone_part}%",))
-            
-            result = cursor.fetchone()
-        
-        if result and result[0]:
+        if result and result[0] and not result[0].strip().lstrip('+').isdigit():
             return result[0]
-        else:
-            return sender_jid
-        
+        return sender_jid
     except sqlite3.Error as e:
         print(f"Database error while getting sender name: {e}")
         return sender_jid
@@ -106,7 +101,8 @@ def format_message(message: Message, show_chat_info: bool = True) -> None:
     
     try:
         sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
-        output += f"From: {sender_name}: {content_prefix}{message.content}\n"
+        content = contact_names().replace_mentions(message.content)
+        output += f"From: {sender_name}: {content_prefix}{content}\n"
     except Exception as e:
         print(f"Error formatting message: {e}")
     return output
@@ -391,45 +387,76 @@ def list_chats(
 
 
 def search_contacts(query: str) -> List[Contact]:
-    """Search contacts by name or phone number."""
+    """Search contacts by name, phone number or LID.
+
+    Looks at the chat names and at every contact the bridge knows, including
+    people who only ever wrote in a group. The jid returned is the 1-on-1
+    chat when there is one (usually the @lid the phone uses), otherwise the
+    phone-number JID.
+    """
+    names = contact_names()
+    text = query.strip().lower()
+    digits = re.sub(r"\D", "", query)
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
-        cursor = conn.cursor()
-        
-        # Split query into characters to support partial matching
-        search_pattern = '%' +query + '%'
-        
-        cursor.execute("""
-            SELECT DISTINCT 
-                jid,
-                name
-            FROM chats
-            WHERE 
-                (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
-                AND jid NOT LIKE '%@g.us'
-            ORDER BY name, jid
-            LIMIT 50
-        """, (search_pattern, search_pattern))
-        
-        contacts = cursor.fetchall()
-        
-        result = []
-        for contact_data in contacts:
-            contact = Contact(
-                phone_number=contact_data[0].split('@')[0],
-                name=contact_data[1],
-                jid=contact_data[0]
-            )
-            result.append(contact)
-            
-        return result
-        
+        chats = dict(conn.execute("SELECT jid, name FROM chats WHERE jid NOT LIKE '%@g.us'").fetchall())
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        chats = {}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+    people = {}
+    candidates = [(jid, chat_name) for jid, chat_name in chats.items()]
+    candidates += [(f"{pn}@s.whatsapp.net" if pn else f"{lid}@lid", None) for _, pn, lid in names.people()]
+    for jid, chat_name in candidates:
+        name, pn, lid = names.person(jid)
+        user, _ = split_jid(jid)
+        key = pn or lid or jid
+        if key in people:
+            continue
+        name = name or chat_name
+        ids = [i for i in (pn, lid, user) if i]
+        if not ((text and name and text in name.lower()) or (len(digits) >= 3 and any(digits in i for i in ids))):
+            continue
+        chat_jid = next((j for j in (f"{lid}@lid", f"{pn}@s.whatsapp.net") if j in chats), None)
+        chat_jid = chat_jid or (f"{pn}@s.whatsapp.net" if pn else jid)
+        people[key] = Contact(phone_number=pn, name=name, jid=chat_jid, lid=lid)
+
+    return sorted(people.values(), key=lambda c: ((c.name or "~").lower(), c.jid))[:50]
+
+
+def list_chat_participants(chat_jid: str) -> List[dict]:
+    """Everyone who wrote in a chat, with name and message count (most active first)."""
+    names = contact_names()
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        rows = conn.execute("""
+            SELECT sender, is_from_me, COUNT(*)
+            FROM messages
+            WHERE chat_jid = ?
+            GROUP BY sender, is_from_me
+        """, (chat_jid,)).fetchall()
     except sqlite3.Error as e:
         print(f"Database error: {e}")
         return []
     finally:
         if 'conn' in locals():
             conn.close()
+
+    # The same person can be stored with and without "@lid"; count them once.
+    people = {}
+    for sender, is_from_me, count in rows:
+        if is_from_me:
+            key, entry = "me", {"jid": None, "name": "Me", "phone_number": None, "lid": None}
+        else:
+            name, pn, lid = names.person(sender)
+            user, _ = split_jid(sender)
+            key = pn or lid or user
+            entry = {"jid": sender, "name": name, "phone_number": pn, "lid": lid}
+        people.setdefault(key, {**entry, "message_count": 0})["message_count"] += count
+    return sorted(people.values(), key=lambda p: -p["message_count"])
 
 
 def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:
