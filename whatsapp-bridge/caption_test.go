@@ -8,8 +8,8 @@ import (
 )
 
 func TestExtractTextContentCaptions(t *testing.T) {
-	img := &waProto.Message{ImageMessage: &waProto.ImageMessage{Caption: proto.String("Vader en moeder van opa Meulendijks")}}
-	if got := extractTextContent(img); got != "Vader en moeder van opa Meulendijks" {
+	img := &waProto.Message{ImageMessage: &waProto.ImageMessage{Caption: proto.String("Grandpa and grandma at the beach")}}
+	if got := extractTextContent(img); got != "Grandpa and grandma at the beach" {
 		t.Errorf("image caption: got %q", got)
 	}
 

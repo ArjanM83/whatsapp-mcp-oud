@@ -4,3 +4,8 @@ whatsapp.log
 # build output / local artifacts
 whatsapp-bridge/whatsapp-bridge
 wa-qr.png
+# runtime state: WhatsApp pairing, message store and downloaded media
+whatsapp-bridge/store/
+# local backups of builds and module files
+*.bak-*
+whatsapp-bridge/whatsapp-bridge.new

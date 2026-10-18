@@ -6,6 +6,17 @@ With this you can search and read your personal Whatsapp messages (including ima
 
 It connects to your **personal WhatsApp account** directly via the Whatsapp web multidevice API (using the [whatsmeow](https://github.com/tulir/whatsmeow) library). All your messages are stored locally in a SQLite database and only sent to an LLM (such as Claude) when the agent accesses them through tools (which you control).
 
+## About this fork
+
+This is a maintained fork of [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp), which has not been updated since July 2025 and no longer builds against the current whatsmeow API. Changes compared to the original:
+
+- **Builds and connects again:** ported to the current whatsmeow API, which also brings a client version that WhatsApp still accepts ("Client outdated (405)" otherwise). When the bridge stops connecting after a WhatsApp update, rebuild it with the latest whatsmeow (`go get go.mau.fi/whatsmeow@latest`).
+- **Pairing by phone number:** set `WA_PHONE_NUMBER` (international format, digits only, e.g. `31612345678`) and the bridge prints an 8-character code to enter under WhatsApp > Linked devices > Link with phone number. Handy when the QR code cannot be scanned. Without it, the QR flow is unchanged.
+- **Names instead of numbers:** WhatsApp now identifies most people by a privacy ID (`...@lid`). The original therefore showed group senders, @-mentions and many 1-on-1 chats as bare numbers. The bridge and the MCP server now resolve these through the LID map to the address-book name (then the push name, then the business name), and the bridge repairs existing chat names at start and every hour.
+- **New tools:** `list_chat_participants` (who wrote in a chat, with name, phone number and message count), `delete_messages_for_me` (synced to the phone) and `archive_chat`. `search_contacts` also finds people known only from groups and accepts a LID.
+- **Fixes:** photo, video and document captions are stored; media downloads no longer fail with a 403 (the signed URL was cut off); a sender is no longer matched loosely against group IDs.
+- **Bridge endpoints** to request older history, retry media and resync the app state.
+
 Here's an example of what you can do when it's connected to Claude.
 
 ![WhatsApp MCP](./example-use.png)
@@ -39,7 +50,7 @@ Here's an example of what you can do when it's connected to Claude.
 
    ```bash
    cd whatsapp-bridge
-   go run main.go
+   go run .
    ```
 
    The first time you run it, you will be prompted to scan a QR code. Scan the QR code with your WhatsApp mobile app to authenticate.
@@ -99,7 +110,7 @@ If you're running this project on Windows, be aware that `go-sqlite3` requires *
    ```bash
    cd whatsapp-bridge
    go env -w CGO_ENABLED=1
-   go run main.go
+   go run .
    ```
 
 Without this setup, you'll likely run into errors like:

@@ -270,7 +270,7 @@ def delete_messages_for_me(chat_jid: str, message_ids: List[str], delete_media: 
     """Delete one or more messages "for me" (like "Delete for me" on the phone).
 
     The deletion is synced to the phone and all linked devices, so the messages
-    disappear from Arjan's own WhatsApp. Other chat members are not affected.
+    disappear from the account owner's own WhatsApp. Other chat members are not affected.
     This cannot be undone: only use it on an explicit request, and archive the
     media first if it should be kept.
 

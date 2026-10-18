@@ -8,7 +8,7 @@ func TestIsPlaceholderName(t *testing.T) {
 		"  ":                 true,
 		"112588289536078":    true,
 		"+31612345678":       true,
-		"Ria Meulendijks":    false,
+		"Jane Doe":           false,
 		"Tommy😁":             false,
 		"Group 120363012345": false,
 	} {
